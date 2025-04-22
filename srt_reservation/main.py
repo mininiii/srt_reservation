@@ -8,15 +8,21 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.select import Select
-from selenium.common.exceptions import ElementClickInterceptedException, StaleElementReferenceException, WebDriverException
+from selenium.common.exceptions import ElementClickInterceptedException, StaleElementReferenceException, WebDriverException, UnexpectedAlertPresentException
+from selenium.webdriver.common.alert import Alert
+
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import os
 
 from srt_reservation.exceptions import InvalidStationNameError, InvalidDateError, InvalidDateFormatError, InvalidTimeFormatError
 from srt_reservation.validation import station_list
 
-chromedriver_path = r'C:\workspace\chromedriver.exe'
+# chromedriver_path = r'C:\workspace\chromedriver.exe'
 
 class SRT:
-    def __init__(self, dpt_stn, arr_stn, dpt_dt, dpt_tm, num_trains_to_check=2, want_reserve=False):
+    def __init__(self, dpt_stn, arr_stn, dpt_dt, dpt_tm, start_trains_to_check=1, num_trains_to_check=2, want_reserve=False):
         """
         :param dpt_stn: SRT 출발역
         :param arr_stn: SRT 도착역
@@ -33,6 +39,7 @@ class SRT:
         self.dpt_dt = dpt_dt
         self.dpt_tm = dpt_tm
 
+        self.start_trains_to_check = start_trains_to_check
         self.num_trains_to_check = num_trains_to_check
         self.want_reserve = want_reserve
         self.driver = None
@@ -59,10 +66,14 @@ class SRT:
         self.login_psw = login_psw
 
     def run_driver(self):
-        try:
-            self.driver = webdriver.Chrome(executable_path=chromedriver_path)
-        except WebDriverException:
-            self.driver = webdriver.Chrome(ChromeDriverManager().install())
+        # try:
+        #     self.driver = webdriver.Chrome(executable_path=chromedriver_path)
+        # except WebDriverException:
+        chrome_options = webdriver.ChromeOptions()
+        # chrome_options.add_argument("headless")
+        s = Service(ChromeDriverManager().install())
+        self.driver = webdriver.Chrome(service=s, options=chrome_options)
+        # self.driver = webdriver.Chrome(ChromeDriverManager().install())
 
     def login(self):
         self.driver.get('https://etk.srail.co.kr/cmc/01/selectLoginForm.do')
@@ -76,6 +87,8 @@ class SRT:
     def check_login(self):
         menu_text = self.driver.find_element(By.CSS_SELECTOR, "#wrap > div.header.header-e > div.global.clear > div").text
         if "환영합니다" in menu_text:
+            while time.time() - start_time < 3:
+                    os.system("afplay /System/Library/Sounds/Submarine.aiff")
             return True
         else:
             return False
@@ -110,36 +123,52 @@ class SRT:
         print(f"예약 대기 사용: {self.want_reserve}")
 
         self.driver.find_element(By.XPATH, "//input[@value='조회하기']").click()
-        self.driver.implicitly_wait(5)
-        time.sleep(1)
+        WebDriverWait(self.driver, 1000).until(
+        EC.presence_of_element_located((By.XPATH, '/html/body/div/div[4]/div/div[3]/div[1]/form/fieldset/div[6]/table/tbody/tr[1]/td[7]/a'))
+        )
+        # self.driver.implicitly_wait(5)
+        # time.sleep(1)
 
     def book_ticket(self, standard_seat, i):
         # standard_seat는 일반석 검색 결과 텍스트
-        
+            
         if "예약하기" in standard_seat:
-            print("예약 가능 클릭")
 
             # Error handling in case that click does not work
             try:
                 self.driver.find_element(By.CSS_SELECTOR,
                                          f"#result-form > fieldset > div.tbl_wrap.th_thead > table > tbody > tr:nth-child({i}) > td:nth-child(7) > a").click()
+                try:
+                    alert = self.driver.switch_to.alert
+                    print(f"[!] 예약 전 알림창 감지: {alert.text}")
+                    alert.accept()
+                    time.sleep(1)  # 알림창 닫은 후 안정성을 위해 대기
+                except:
+                    pass  # 알림창이 없으면 그냥 넘어감
             except ElementClickInterceptedException as err:
                 print(err)
                 self.driver.find_element(By.CSS_SELECTOR,
                                          f"#result-form > fieldset > div.tbl_wrap.th_thead > table > tbody > tr:nth-child({i}) > td:nth-child(7) > a").send_keys(
                     Keys.ENTER)
             finally:
+                print("예약 가능 클릭")
                 self.driver.implicitly_wait(3)
 
             # 예약이 성공하면
             if self.driver.find_elements(By.ID, 'isFalseGotoMain'):
                 self.is_booked = True
                 print("예약 성공")
+                import time
+                start_time = time.time()
+                while time.time() - start_time < 7:
+                    os.system("afplay /System/Library/Sounds/Submarine.aiff")
+
                 return self.driver
             else:
                 print("잔여석 없음. 다시 검색")
                 self.driver.back()  # 뒤로가기
                 self.driver.implicitly_wait(5)
+        return False
 
     def refresh_result(self):
         submit = self.driver.find_element(By.XPATH, "//input[@value='조회하기']")
@@ -159,16 +188,31 @@ class SRT:
 
     def check_result(self):
         while True:
-            for i in range(1, self.num_trains_to_check+1):
+            for i in range(self.start_trains_to_check, self.start_trains_to_check + self.num_trains_to_check):
                 try:
                     standard_seat = self.driver.find_element(By.CSS_SELECTOR, f"#result-form > fieldset > div.tbl_wrap.th_thead > table > tbody > tr:nth-child({i}) > td:nth-child(7)").text
                     reservation = self.driver.find_element(By.CSS_SELECTOR, f"#result-form > fieldset > div.tbl_wrap.th_thead > table > tbody > tr:nth-child({i}) > td:nth-child(8)").text
                 except StaleElementReferenceException:
                     standard_seat = "매진"
                     reservation = "매진"
+                # 🔹 알림창이 떠 있으면 먼저 닫아줌
+                try:
+                    alert = self.driver.switch_to.alert
+                    print(f"[!] 예약 전 알림창 감지: {alert.text}")
+                    alert.accept()
+                    time.sleep(1)  # 알림창 닫은 후 안정성을 위해 대기
+                except:
+                    pass  # 알림창이 없으면 그냥 넘어감
 
-                if self.book_ticket(standard_seat, i):
-                    return self.driver
+                try:
+                    if self.book_ticket(standard_seat, i):
+                        return self.driver
+                except UnexpectedAlertPresentException:
+                    alert = self.driver.switch_to.alert
+                    print(f"[!] 예약 중 알림창 감지: {alert.text}")
+                    alert.accept()  # 알림창 확인 버튼 클릭
+                    time.sleep(1)  # 알림창을 닫고 안정성을 위해 대기 후 다시 시도
+                    continue  # 다음 루프에서 다시 시도
 
                 if self.want_reserve:
                     self.reserve_ticket(reservation, i)
@@ -184,6 +228,7 @@ class SRT:
         self.run_driver()
         self.set_log_info(login_id, login_psw)
         self.login()
+        os.system("afplay /System/Library/Sounds/Submarine.aiff")
         self.go_search()
         self.check_result()
 
