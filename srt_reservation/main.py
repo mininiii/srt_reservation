@@ -19,6 +19,13 @@ import os
 from srt_reservation.exceptions import InvalidStationNameError, InvalidDateError, InvalidDateFormatError, InvalidTimeFormatError
 from srt_reservation.validation import station_list
 
+# import winsound
+import os
+
+from srt_reservation.send_email import send_email
+from selenium.common.exceptions import UnexpectedAlertPresentException, NoAlertPresentException
+
+
 # chromedriver_path = r'C:\workspace\chromedriver.exe'
 
 class SRT:
@@ -87,9 +94,10 @@ class SRT:
     def check_login(self):
         menu_text = self.driver.find_element(By.CSS_SELECTOR, "#wrap > div.header.header-e > div.global.clear > div").text
         if "환영합니다" in menu_text:
-            while time.time() - start_time < 3:
-                    os.system("afplay /System/Library/Sounds/Submarine.aiff")
-            return True
+            # while time.time() - start_time < 3:
+            #     sound_path = os.path.join(os.environ['SystemRoot'], 'Media', 'Windows Ding.wav')
+            #     winsound.PlaySound(sound_path, winsound.SND_FILENAME)         
+            # return True
         else:
             return False
 
@@ -153,6 +161,14 @@ class SRT:
             finally:
                 print("예약 가능 클릭")
                 self.driver.implicitly_wait(3)
+            
+            try:
+                alert = self.driver.switch_to.alert
+                print("Alert 발견:", alert.text)
+                alert.accept()  # 확인 누르기
+                print("Alert 수락 완료")
+            except NoAlertPresentException:
+                pass  # Alert 없으면 무시
 
             # 예약이 성공하면
             if self.driver.find_elements(By.ID, 'isFalseGotoMain'):
@@ -160,9 +176,10 @@ class SRT:
                 print("예약 성공")
                 import time
                 start_time = time.time()
-                while time.time() - start_time < 7:
-                    os.system("afplay /System/Library/Sounds/Submarine.aiff")
-
+                
+                # sound_path = os.path.join(os.environ['SystemRoot'], 'Media', 'Windows Ding.wav')
+                # winsound.PlaySound(sound_path, winsound.SND_FILENAME)
+                send_email("SRT 예약 완료", "빨리 결제 하삼.")
                 return self.driver
             else:
                 print("잔여석 없음. 다시 검색")
@@ -170,13 +187,27 @@ class SRT:
                 self.driver.implicitly_wait(5)
         return False
 
+    # def refresh_result(self):
+    #     submit = self.driver.find_element(By.XPATH, "//input[@value='조회하기']")
+    #     self.driver.execute_script("arguments[0].click();", submit)
+    #     self.cnt_refresh += 1
+    #     print(f"새로고침 {self.cnt_refresh}회")
+    #     self.driver.implicitly_wait(10)
+    #     time.sleep(0.5)
     def refresh_result(self):
-        submit = self.driver.find_element(By.XPATH, "//input[@value='조회하기']")
-        self.driver.execute_script("arguments[0].click();", submit)
-        self.cnt_refresh += 1
-        print(f"새로고침 {self.cnt_refresh}회")
-        self.driver.implicitly_wait(10)
-        time.sleep(0.5)
+        for attempt in range(3):
+            try:
+                submit = self.driver.find_element(By.XPATH, "//input[@value='조회하기']")
+                self.driver.execute_script("arguments[0].click();", submit)
+                self.cnt_refresh += 1
+                print(f"새로고침 {self.cnt_refresh}회")
+                self.driver.implicitly_wait(10)
+                time.sleep(0.5)
+                break
+            except StaleElementReferenceException:
+                print(f"[조회하기 클릭] StaleElement 발생, 재시도 {attempt+1}/3")
+                time.sleep(1)
+
 
     def reserve_ticket(self, reservation, i):
         if "신청하기" in reservation:
@@ -204,15 +235,37 @@ class SRT:
                 except:
                     pass  # 알림창이 없으면 그냥 넘어감
 
+                # try:
+                #     if self.book_ticket(standard_seat, i):
+                #         return self.driver
+                # except UnexpectedAlertPresentException:
+                #     alert = self.driver.switch_to.alert
+                #     print(f"[!] 예약 중 알림창 감지: {alert.text}")
+                #     alert.accept()  # 알림창 확인 버튼 클릭
+                #     time.sleep(1)  # 알림창을 닫고 안정성을 위해 대기 후 다시 시도
+                #     continue  # 다음 루프에서 다시 시도
+
+                from selenium.webdriver.support.ui import WebDriverWait
+                from selenium.webdriver.support import expected_conditions as EC
+                from selenium.common.exceptions import UnexpectedAlertPresentException, NoAlertPresentException
+
                 try:
                     if self.book_ticket(standard_seat, i):
                         return self.driver
                 except UnexpectedAlertPresentException:
-                    alert = self.driver.switch_to.alert
-                    print(f"[!] 예약 중 알림창 감지: {alert.text}")
-                    alert.accept()  # 알림창 확인 버튼 클릭
-                    time.sleep(1)  # 알림창을 닫고 안정성을 위해 대기 후 다시 시도
-                    continue  # 다음 루프에서 다시 시도
+                    print("[!] UnexpectedAlertPresentException 발생 — alert 처리 시도")
+                    try:
+                        WebDriverWait(self.driver, 2).until(EC.alert_is_present())
+                        alert = self.driver.switch_to.alert
+                        print(f"[!] 예약 중 알림창 감지: {alert.text}")
+                        alert.accept()
+                        time.sleep(1)
+                    except NoAlertPresentException:
+                        print("Alert 확인 중 NoAlertPresentException: 이미 닫혔을 수도 있음")
+                    except Exception as e:
+                        print("Alert 처리 중 기타 오류:", e)
+                    # 예약 재시도는 필요하면 외부 루프에서 처리
+
 
                 if self.want_reserve:
                     self.reserve_ticket(reservation, i)
@@ -228,7 +281,8 @@ class SRT:
         self.run_driver()
         self.set_log_info(login_id, login_psw)
         self.login()
-        os.system("afplay /System/Library/Sounds/Submarine.aiff")
+        # sound_path = os.path.join(os.environ['SystemRoot'], 'Media', 'Windows Ding.wav')
+        # winsound.PlaySound(sound_path, winsound.SND_FILENAME)        
         self.go_search()
         self.check_result()
 
