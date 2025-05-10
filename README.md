@@ -44,7 +44,7 @@ python quickstart.py --user 1234567890 --psw 000000 --dpt 동탄 --arr 동대구
 
 **Optional**  
 ```cmd
-python quickstart.py --user 2485247840 --psw min020521@ --dpt 동탄 --arr 대전 --dt 20250509 --tm 16 --stnum 2 --num 4 --reserve False```
+python quickstart.py --user 1111111111 --psw @@@@@@@ --dpt 동탄 --arr 대전 --dt 20250509 --tm 16 --stnum 2 --num 4 --reserve False```
 ```
 
 **실행 결과**
