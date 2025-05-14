@@ -15,6 +15,9 @@ def parse_cli_args():
     parser.add_argument("--num", help="no of trains to check", type=int, metavar="2", default=2)
     parser.add_argument("--reserve", help="Reserve or not", type=bool, metavar="2", default=False)
 
+    parser.add_argument("--sender", help="Sender email address", type=str, metavar="")
+    parser.add_argument("--recipient", help="Recipient email address", type=str, metavar="")
+    parser.add_argument("--app_password", help="App password for sender email", type=str, metavar="")
     args = parser.parse_args()
 
     return args

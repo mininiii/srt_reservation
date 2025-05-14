@@ -23,10 +23,10 @@ from srt_reservation.validation import station_list
 import os
 
 from srt_reservation.send_email import send_email
-from selenium.common.exceptions import UnexpectedAlertPresentException, NoAlertPresentException
+from selenium.common.exceptions import UnexpectedAlertPresentException, NoAlertPresentException, NoSuchElementException
 
 
-# chromedriver_path = r'C:\workspace\chromedriver.exe'
+# chromedriver_path = r'C:\workspace\chrfomedriver.exe'
 
 class SRT:
     def __init__(self, dpt_stn, arr_stn, dpt_dt, dpt_tm, start_trains_to_check=1, num_trains_to_check=2, want_reserve=False):
@@ -51,6 +51,10 @@ class SRT:
         self.want_reserve = want_reserve
         self.driver = None
 
+        self.sender = None
+        self.recipient = None
+        self.app_password = None
+
         self.is_booked = False  # 예약 완료 되었는지 확인용
         self.cnt_refresh = 0  # 새로고침 회수 기록
 
@@ -71,6 +75,17 @@ class SRT:
     def set_log_info(self, login_id, login_psw):
         self.login_id = login_id
         self.login_psw = login_psw
+
+    def set_email_info(self, sender=None, recipient=None, app_password=None):
+        self.sender = sender
+        self.recipient = recipient
+        self.app_password = app_password
+        if not self.sender or not self.recipient or not self.app_password:
+            print("이메일 정보가 설정되지 않았습니다. 이메일을 보내려면 sender, recipient, app_password를 설정하세요.")
+            return
+        # # 테스트
+        send_email("SRT 매크로 시작", "SRT 매크로가 시작되었습니다.", self.sender, self.recipient, self.app_password)
+        print("이메일 정보가 설정되었습니다.")
 
     def run_driver(self):
         # try:
@@ -97,7 +112,7 @@ class SRT:
             # while time.time() - start_time < 3:
             #     sound_path = os.path.join(os.environ['SystemRoot'], 'Media', 'Windows Ding.wav')
             #     winsound.PlaySound(sound_path, winsound.SND_FILENAME)         
-            # return True
+            return True
         else:
             return False
 
@@ -179,7 +194,8 @@ class SRT:
                 
                 # sound_path = os.path.join(os.environ['SystemRoot'], 'Media', 'Windows Ding.wav')
                 # winsound.PlaySound(sound_path, winsound.SND_FILENAME)
-                send_email("SRT 예약 완료", "빨리 결제 하삼.")
+                if self.sender and self.recipient and self.app_password: 
+                    send_email("SRT 예약 완료", "빨리 결제 하삼.", self.sender, self.recipient, self.app_password)
                 return self.driver
             else:
                 print("잔여석 없음. 다시 검색")
@@ -197,15 +213,21 @@ class SRT:
     def refresh_result(self):
         for attempt in range(3):
             try:
-                submit = self.driver.find_element(By.XPATH, "//input[@value='조회하기']")
+                wait = WebDriverWait(self.driver, 10)
+                submit = wait.until(EC.presence_of_element_located((By.XPATH, "//input[@value='조회하기']")))
                 self.driver.execute_script("arguments[0].click();", submit)
                 self.cnt_refresh += 1
                 print(f"새로고침 {self.cnt_refresh}회")
-                self.driver.implicitly_wait(10)
                 time.sleep(0.5)
                 break
             except StaleElementReferenceException:
                 print(f"[조회하기 클릭] StaleElement 발생, 재시도 {attempt+1}/3")
+                time.sleep(1)
+            except NoSuchElementException:
+                print(f"[조회하기 클릭] 요소를 찾을 수 없습니다. 재시도 {attempt+1}/3")
+                time.sleep(1)
+            except TimeoutException:
+                print(f"[조회하기 클릭] 요소 로딩 시간 초과. 재시도 {attempt+1}/3")
                 time.sleep(1)
 
 
@@ -277,9 +299,10 @@ class SRT:
                 time.sleep(randint(2, 4))
                 self.refresh_result()
 
-    def run(self, login_id, login_psw):
+    def run(self, login_id, login_psw, sender=None, recipient=None, app_password=None):
         self.run_driver()
         self.set_log_info(login_id, login_psw)
+        self.set_email_info(sender, recipient, app_password)
         self.login()
         # sound_path = os.path.join(os.environ['SystemRoot'], 'Media', 'Windows Ding.wav')
         # winsound.PlaySound(sound_path, winsound.SND_FILENAME)        

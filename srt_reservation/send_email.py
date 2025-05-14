@@ -1,10 +1,7 @@
 import smtplib
 from email.mime.text import MIMEText
 
-def send_email(subject, body):
-    sender = 'didals0521@gmail.com'
-    recipient = 'didals0521@gmail.com'
-    app_password = 'sshtaqduajqfbslu'  # 앱 비밀번호
+def send_email(subject, body, sender=None, recipient=None, app_password=None):
 
     msg = MIMEText(body)
     msg['Subject'] = subject
@@ -16,5 +13,3 @@ def send_email(subject, body):
         smtp.send_message(msg)
         print("이메일 전송 완료")
 
-# # 테스트
-# send_email("", "웹사이트에서 조건을 만족했습니다. 확인하세요!")
