@@ -42,6 +42,12 @@ pip install -r requirements.txt
 python quickstart.py --user 1234567890 --psw 000000 --dpt 동탄 --arr 동대구 --dt 20220117 --tm 08
 ```
 
+## json 파일에서 옵션 불러오기 (config.json)
+```cmd
+python quickstart.py --json True
+```
+
+
 **Optional**  
 ```cmd
 python quickstart.py --user 2485247840 --psw min020521@ --dpt 동탄 --arr 대전 --dt 20250509 --tm 16 --stnum 2 --num 4 --reserve False --sender example@gmail.com --recipient example@gmail.com --app_password cklsekjflijdlsk```
